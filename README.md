@@ -2,6 +2,12 @@
 
 A sleek, lightweight, always-on-top Windows desktop glucose overlay for **Dexcom G7**, built with **Tauri v2**, **React**, **TypeScript**, and **Rust** by **Almoukhtar Amiouni**.
 
+## Screenshots
+
+| Live Overlay | Hovering a Reading Dot | Click-Through Locked (Dimmed) |
+| :---: | :---: | :---: |
+| ![Live Overlay](docs/screenshots/overlay-live.png) | ![Hovering a Reading Dot](docs/screenshots/overlay-hover-dot.png) | ![Click-Through Locked (Dimmed)](docs/screenshots/overlay-locked.png) |
+
 ## Features
 
 - **Minimal Glassmorphic Overlay:** Crisp `tabular-nums` glucose reading, animated trend arrow, delta, reading age, and stale-data strikethrough after 10 minutes.
