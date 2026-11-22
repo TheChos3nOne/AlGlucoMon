@@ -417,6 +417,20 @@ export function Settings() {
 
         <label className="row toggle-row">
           <div>
+            <span className="row-title">Launch on Windows startup</span>
+            <span className="row-sub">
+              Automatically start AlGlucoMon when you sign in to Windows
+            </span>
+          </div>
+          <input
+            type="checkbox"
+            checked={settings.runOnStartup}
+            onChange={(e) => updateImmediate("runOnStartup", e.target.checked)}
+          />
+        </label>
+
+        <label className="row toggle-row">
+          <div>
             <span className="row-title">Click-through lock</span>
             <span className="row-sub">
               Dims overlay &amp; passes clicks through. Hold{" "}

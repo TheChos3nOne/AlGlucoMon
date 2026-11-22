@@ -39,6 +39,41 @@ fn is_vk_down(_vk: i32) -> bool {
     false
 }
 
+#[cfg(target_os = "windows")]
+fn apply_run_on_startup(enabled: bool) -> Result<(), String> {
+    use std::io::ErrorKind;
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+
+    const RUN_KEY_PATH: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+    const VALUE_NAME: &str = "AlGlucoMon";
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let (key, _) = hkcu
+        .create_subkey(RUN_KEY_PATH)
+        .map_err(|e| format!("Failed to open Windows Run key: {e}"))?;
+
+    if enabled {
+        let exe = std::env::current_exe()
+            .map_err(|e| format!("Failed to resolve executable path: {e}"))?;
+        let quoted = format!("\"{}\"", exe.display());
+        key.set_value(VALUE_NAME, &quoted)
+            .map_err(|e| format!("Failed to register startup entry: {e}"))?;
+    } else {
+        match key.delete_value(VALUE_NAME) {
+            Ok(()) => {}
+            Err(e) if e.kind() == ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("Failed to remove startup entry: {e}")),
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn apply_run_on_startup(_enabled: bool) -> Result<(), String> {
+    Ok(())
+}
+
 struct AppState {
     settings: Mutex<AppSettings>,
     dexcom: DexcomClient,
@@ -63,6 +98,16 @@ fn save_settings(
     let is_signed_in = !settings.username.trim().is_empty() && !settings.password.is_empty();
     if !is_signed_in {
         settings.click_through = false;
+    }
+    let startup_changed = {
+        let guard = state
+            .settings
+            .lock()
+            .map_err(|_| "Settings mutex poisoned".to_string())?;
+        guard.run_on_startup != settings.run_on_startup
+    };
+    if startup_changed {
+        apply_run_on_startup(settings.run_on_startup)?;
     }
     persist_settings(&app, &settings)?;
     {
@@ -180,6 +225,9 @@ pub fn run() {
                 && !initial_settings.password.is_empty();
             if !is_signed_in {
                 initial_settings.click_through = false;
+            }
+            if initial_settings.run_on_startup {
+                let _ = apply_run_on_startup(true);
             }
 
             if let Some(overlay) = app.get_webview_window("overlay") {

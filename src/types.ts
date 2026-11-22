@@ -43,6 +43,7 @@ export interface AppSettings {
   opacity: number;
   widgetSize: WidgetSize;
   alwaysOnTop: boolean;
+  runOnStartup: boolean;
   clickThrough: boolean;
   clickThroughOpacity: number;
   clickThroughModifier: ClickThroughModifier;
@@ -67,6 +68,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   opacity: 0.86,
   widgetSize: "standard",
   alwaysOnTop: true,
+  runOnStartup: false,
   clickThrough: false,
   clickThroughOpacity: 0.55,
   clickThroughModifier: "alt",
