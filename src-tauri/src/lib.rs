@@ -12,7 +12,7 @@ use std::time::Duration;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem},
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, State, WindowEvent,
+    AppHandle, Emitter, Manager, PhysicalPosition, Position, State, WebviewWindow, WindowEvent,
 };
 
 const VK_LBUTTON: i32 = 0x01;
@@ -74,10 +74,78 @@ fn apply_run_on_startup(_enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
+fn is_position_visible(x: i32, y: i32, bounds: &[(i32, i32, u32, u32)]) -> bool {
+    if x <= -10_000 || y <= -10_000 {
+        return false;
+    }
+    const EDGE_TOL: i32 = 40;
+    bounds.iter().any(|&(mx, my, mw, mh)| {
+        let max_x = mx + (mw as i32) - EDGE_TOL;
+        let max_y = my + (mh as i32) - EDGE_TOL;
+        x >= mx - EDGE_TOL && x <= max_x && y >= my - EDGE_TOL && y <= max_y
+    })
+}
+
+fn place_overlay_initial(overlay: &WebviewWindow, saved_x: Option<i32>, saved_y: Option<i32>) {
+    let monitors = overlay.available_monitors().unwrap_or_default();
+    let rects: Vec<(i32, i32, u32, u32)> = monitors
+        .iter()
+        .map(|m| {
+            let p = m.position();
+            let s = m.size();
+            (p.x, p.y, s.width, s.height)
+        })
+        .collect();
+
+    if let (Some(x), Some(y)) = (saved_x, saved_y) {
+        if is_position_visible(x, y, &rects) {
+            let _ = overlay.set_position(Position::Physical(PhysicalPosition::new(x, y)));
+            return;
+        }
+    }
+
+    let target_monitor = overlay
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| monitors.into_iter().next());
+
+    if let Some(monitor) = target_monitor {
+        let m_pos = monitor.position();
+        let m_size = monitor.size();
+        let scale = monitor.scale_factor();
+        let margin = (24.0 * scale).round() as i32;
+        let win_w = overlay
+            .outer_size()
+            .map(|s| s.width as i32)
+            .unwrap_or((256.0 * scale).round() as i32);
+        let x = m_pos.x + (m_size.width as i32) - win_w - margin;
+        let y = m_pos.y + margin;
+        let _ = overlay.set_position(Position::Physical(PhysicalPosition::new(x, y)));
+    }
+}
+
+fn flush_pending_position(app: &AppHandle) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    if !state.position_dirty.swap(false, Ordering::Relaxed) {
+        return;
+    }
+    let snapshot = {
+        let Ok(guard) = state.settings.lock() else {
+            return;
+        };
+        guard.clone()
+    };
+    let _ = persist_settings(app, &snapshot);
+}
+
 struct AppState {
     settings: Mutex<AppSettings>,
     dexcom: DexcomClient,
     modifier_override: AtomicBool,
+    position_dirty: AtomicBool,
 }
 
 #[tauri::command]
@@ -99,13 +167,19 @@ fn save_settings(
     if !is_signed_in {
         settings.click_through = false;
     }
-    let startup_changed = {
+    let (startup_changed, saved_x, saved_y) = {
         let guard = state
             .settings
             .lock()
             .map_err(|_| "Settings mutex poisoned".to_string())?;
-        guard.run_on_startup != settings.run_on_startup
+        (
+            guard.run_on_startup != settings.run_on_startup,
+            guard.window_x,
+            guard.window_y,
+        )
     };
+    settings.window_x = saved_x;
+    settings.window_y = saved_y;
     if startup_changed {
         apply_run_on_startup(settings.run_on_startup)?;
     }
@@ -230,21 +304,30 @@ pub fn run() {
                 let _ = apply_run_on_startup(true);
             }
 
+            let saved_x = initial_settings.window_x;
+            let saved_y = initial_settings.window_y;
+
+            app.manage(AppState {
+                settings: Mutex::new(initial_settings.clone()),
+                dexcom: DexcomClient::new(),
+                modifier_override: AtomicBool::new(false),
+                position_dirty: AtomicBool::new(false),
+            });
+
             if let Some(overlay) = app.get_webview_window("overlay") {
                 let _ = overlay.set_always_on_top(initial_settings.always_on_top);
                 let _ = overlay.set_ignore_cursor_events(initial_settings.click_through);
+                place_overlay_initial(&overlay, saved_x, saved_y);
             }
-
-            app.manage(AppState {
-                settings: Mutex::new(initial_settings),
-                dexcom: DexcomClient::new(),
-                modifier_override: AtomicBool::new(false),
-            });
 
             let handle = app.handle().clone();
             thread::spawn(move || loop {
+                let state = handle.state::<AppState>();
+                if state.position_dirty.load(Ordering::Relaxed) && !is_vk_down(VK_LBUTTON) {
+                    flush_pending_position(&handle);
+                }
+
                 let (click_through, modifier) = {
-                    let state = handle.state::<AppState>();
                     let Ok(guard) = state.settings.lock() else {
                         thread::sleep(Duration::from_millis(120));
                         continue;
@@ -252,7 +335,6 @@ pub fn run() {
                     (guard.click_through, guard.click_through_modifier.clone())
                 };
 
-                let state = handle.state::<AppState>();
                 if !click_through {
                     if state.modifier_override.swap(false, Ordering::Relaxed) {
                         if let Some(overlay) = handle.get_webview_window("overlay") {
@@ -286,12 +368,14 @@ pub fn run() {
             let toggle_lock =
                 MenuItemBuilder::with_id("toggle_click_through", "Toggle Click-Through Lock")
                     .build(app)?;
+            let reset_pos =
+                MenuItemBuilder::with_id("reset_position", "Reset Overlay Position").build(app)?;
             let open_cfg = MenuItemBuilder::with_id("open_settings", "Settings...").build(app)?;
             let sep = PredefinedMenuItem::separator(app)?;
             let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
 
             let menu = MenuBuilder::new(app)
-                .items(&[&toggle_vis, &toggle_lock, &open_cfg, &sep, &quit])
+                .items(&[&toggle_vis, &toggle_lock, &reset_pos, &open_cfg, &sep, &quit])
                 .build()?;
 
             let icon = app
@@ -307,10 +391,31 @@ pub fn run() {
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "toggle_visibility" => toggle_overlay_visibility(app),
                     "toggle_click_through" => toggle_click_through_from_tray(app),
+                    "reset_position" => {
+                        if let Some(state) = app.try_state::<AppState>() {
+                            state.position_dirty.store(false, Ordering::Relaxed);
+                            let updated = {
+                                let Ok(mut guard) = state.settings.lock() else {
+                                    return;
+                                };
+                                guard.window_x = None;
+                                guard.window_y = None;
+                                guard.clone()
+                            };
+                            let _ = persist_settings(app, &updated);
+                        }
+                        if let Some(overlay) = app.get_webview_window("overlay") {
+                            place_overlay_initial(&overlay, None, None);
+                            let _ = overlay.show();
+                        }
+                    }
                     "open_settings" => {
                         let _ = open_settings(app.clone());
                     }
-                    "quit" => app.exit(0),
+                    "quit" => {
+                        flush_pending_position(app);
+                        app.exit(0);
+                    }
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
@@ -330,13 +435,42 @@ pub fn run() {
 
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if window.label() == "settings" {
+        .on_window_event(|window, event| match window.label() {
+            "settings" => {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     let _ = window.hide();
                 }
             }
+            "overlay" => match event {
+                WindowEvent::Moved(pos) => {
+                    if pos.x <= -10_000 || pos.y <= -10_000 {
+                        return;
+                    }
+                    if let Some(state) = window.app_handle().try_state::<AppState>() {
+                        let changed = {
+                            let Ok(mut guard) = state.settings.lock() else {
+                                return;
+                            };
+                            if guard.window_x == Some(pos.x) && guard.window_y == Some(pos.y) {
+                                false
+                            } else {
+                                guard.window_x = Some(pos.x);
+                                guard.window_y = Some(pos.y);
+                                true
+                            }
+                        };
+                        if changed {
+                            state.position_dirty.store(true, Ordering::Relaxed);
+                        }
+                    }
+                }
+                WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed => {
+                    flush_pending_position(window.app_handle());
+                }
+                _ => {}
+            },
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             get_settings,
@@ -351,7 +485,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::modifier_vk;
+    use super::{is_position_visible, modifier_vk};
 
     #[test]
     fn maps_click_through_modifier_keys() {
@@ -359,5 +493,16 @@ mod tests {
         assert_eq!(modifier_vk("ctrl"), 0x11);
         assert_eq!(modifier_vk("shift"), 0x10);
         assert_eq!(modifier_vk("unknown"), 0x12);
+    }
+
+    #[test]
+    fn validates_saved_window_position_against_monitors() {
+        let single = [(0, 0, 1920, 1080)];
+        let dual = [(0, 0, 1920, 1080), (-1920, 0, 1920, 1080)];
+
+        assert!(is_position_visible(100, 100, &single));
+        assert!(is_position_visible(-1500, 200, &dual));
+        assert!(!is_position_visible(2500, 200, &single));
+        assert!(!is_position_visible(-32000, -32000, &single));
     }
 }

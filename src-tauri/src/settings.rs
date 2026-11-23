@@ -28,6 +28,8 @@ pub struct AppSettings {
     pub click_through_opacity: f64,
     pub click_through_modifier: String,
     pub show_delta: bool,
+    pub window_x: Option<i32>,
+    pub window_y: Option<i32>,
 }
 
 impl Default for AppSettings {
@@ -55,6 +57,8 @@ impl Default for AppSettings {
             click_through_opacity: 0.55,
             click_through_modifier: "alt".to_string(),
             show_delta: true,
+            window_x: None,
+            window_y: None,
         }
     }
 }

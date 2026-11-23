@@ -27,7 +27,7 @@ AlGlucoMon reads live readings from **Dexcom Share**:
 
 ## Installation (Windows)
 
-Download `AlGlucoMon_0.1.0_x64-setup.exe` from the [Releases](../../releases) page and run the installer.
+Download `AlGlucoMon_0.1.1_x64-setup.exe` from the [Releases](../../releases) page and run the installer.
 
 ## Building from Source
 

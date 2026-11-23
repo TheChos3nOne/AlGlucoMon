@@ -1,6 +1,6 @@
 [package]
 name = "alglucomon"
-version = "0.1.0"
+version = "0.1.1"
 description = "AlGlucoMon — Desktop Dexcom G7 glucose overlay"
 authors = ["Almoukhtar Amiouni"]
 license = "GPL-3.0-or-later"
