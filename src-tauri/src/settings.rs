@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,7 +63,33 @@ impl Default for AppSettings {
     }
 }
 
+pub fn has_portable_marker(dir: &Path) -> bool {
+    dir.join("portable.txt").exists() || dir.join(".portable").exists()
+}
+
+pub fn portable_root_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let exe_dir = exe.parent()?.to_path_buf();
+    let has_flag = std::env::args().any(|a| a == "--portable");
+    if has_flag || has_portable_marker(&exe_dir) {
+        Some(exe_dir)
+    } else {
+        None
+    }
+}
+
+pub fn is_portable_mode() -> bool {
+    portable_root_dir().is_some()
+}
+
+pub fn portable_webview_dir() -> Option<PathBuf> {
+    portable_root_dir().map(|d| d.join("data").join("EBWebView"))
+}
+
 fn settings_file_path(app: &AppHandle) -> Result<PathBuf, String> {
+    if let Some(portable_dir) = portable_root_dir() {
+        return Ok(portable_dir.join("settings.json"));
+    }
     let dir = app
         .path()
         .app_config_dir()
@@ -87,4 +113,25 @@ pub fn persist_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), S
     let json = serde_json::to_string_pretty(settings)
         .map_err(|e| format!("Failed to serialize settings: {e}"))?;
     fs::write(path, json).map_err(|e| format!("Failed to write settings file: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::has_portable_marker;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn detects_portable_marker_file() {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("alglucomon_test_{nanos}"));
+        fs::create_dir_all(&dir).unwrap();
+        assert!(!has_portable_marker(&dir));
+        fs::write(dir.join("portable.txt"), "").unwrap();
+        assert!(has_portable_marker(&dir));
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

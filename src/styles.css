@@ -719,3 +719,26 @@ input[type="checkbox"] {
 .secondary-btn:hover {
   background: rgba(255, 255, 255, 0.12);
 }
+
+.header-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.portable-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.16);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #7dd3fc;
+}
+
+.row.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}

@@ -3,12 +3,13 @@ mod settings;
 
 use dexcom::{DexcomClient, GlucoseReading};
 use settings::{load_settings, persist_settings, AppSettings};
+use std::ffi::c_void;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Mutex,
 };
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem},
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
@@ -38,6 +39,65 @@ fn is_vk_down(vk: i32) -> bool {
 fn is_vk_down(_vk: i32) -> bool {
     false
 }
+
+#[cfg(target_os = "windows")]
+fn ensure_overlay_topmost(overlay_hwnd: *mut c_void, settings_hwnd: Option<*mut c_void>) {
+    #[link(name = "user32")]
+    extern "system" {
+        fn IsIconic(h_wnd: *mut c_void) -> i32;
+        fn IsWindowVisible(h_wnd: *mut c_void) -> i32;
+        fn ShowWindow(h_wnd: *mut c_void, n_cmd_show: i32) -> i32;
+        fn GetForegroundWindow() -> *mut c_void;
+        fn SetWindowPos(
+            h_wnd: *mut c_void,
+            h_wnd_insert_after: *mut c_void,
+            x: i32,
+            y: i32,
+            cx: i32,
+            cy: i32,
+            u_flags: u32,
+        ) -> i32;
+    }
+
+    const SW_SHOWNOACTIVATE: i32 = 4;
+    const HWND_TOPMOST: *mut c_void = -1isize as *mut c_void;
+    const SWP_NOSIZE: u32 = 0x0001;
+    const SWP_NOMOVE: u32 = 0x0002;
+    const SWP_NOACTIVATE: u32 = 0x0010;
+
+    unsafe {
+        if IsIconic(overlay_hwnd) != 0 || IsWindowVisible(overlay_hwnd) == 0 {
+            ShowWindow(overlay_hwnd, SW_SHOWNOACTIVATE);
+        }
+        let fg = GetForegroundWindow();
+        if settings_hwnd.is_some_and(|sh| sh == fg) {
+            return;
+        }
+        SetWindowPos(
+            overlay_hwnd,
+            HWND_TOPMOST,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn reassert_overlay_topmost(app: &AppHandle, overlay: &WebviewWindow) {
+    if let Ok(hwnd) = overlay.hwnd() {
+        let settings_hwnd = app
+            .get_webview_window("settings")
+            .and_then(|w| w.hwnd().ok())
+            .map(|h| h.0);
+        ensure_overlay_topmost(hwnd.0, settings_hwnd);
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn reassert_overlay_topmost(_app: &AppHandle, _overlay: &WebviewWindow) {}
 
 #[cfg(target_os = "windows")]
 fn apply_run_on_startup(enabled: bool) -> Result<(), String> {
@@ -146,6 +206,12 @@ struct AppState {
     dexcom: DexcomClient,
     modifier_override: AtomicBool,
     position_dirty: AtomicBool,
+    user_hidden: AtomicBool,
+}
+
+#[tauri::command]
+fn is_portable_mode() -> bool {
+    settings::is_portable_mode()
 }
 
 #[tauri::command]
@@ -180,7 +246,9 @@ fn save_settings(
     };
     settings.window_x = saved_x;
     settings.window_y = saved_y;
-    if startup_changed {
+    if settings::is_portable_mode() {
+        settings.run_on_startup = false;
+    } else if startup_changed {
         apply_run_on_startup(settings.run_on_startup)?;
     }
     persist_settings(&app, &settings)?;
@@ -259,12 +327,30 @@ async fn test_dexcom_connection(
 }
 
 fn toggle_overlay_visibility(app: &AppHandle) {
-    if let Some(overlay) = app.get_webview_window("overlay") {
-        let visible = overlay.is_visible().unwrap_or(true);
-        if visible {
-            let _ = overlay.hide();
-        } else {
-            let _ = overlay.show();
+    let Some(overlay) = app.get_webview_window("overlay") else {
+        return;
+    };
+    let state = app.state::<AppState>();
+    let user_hidden = state.user_hidden.load(Ordering::Relaxed);
+    let visible = !user_hidden && overlay.is_visible().unwrap_or(true);
+
+    if visible {
+        state.user_hidden.store(true, Ordering::Relaxed);
+        let _ = overlay.hide();
+    } else {
+        state.user_hidden.store(false, Ordering::Relaxed);
+        let (always_on_top, click_through) = state
+            .settings
+            .lock()
+            .map(|g| (g.always_on_top, g.click_through))
+            .unwrap_or((true, false));
+        let _ = overlay.unminimize();
+        let _ = overlay.show();
+        let _ = overlay.set_always_on_top(always_on_top);
+        if always_on_top {
+            reassert_overlay_topmost(app, &overlay);
+        }
+        if !click_through {
             let _ = overlay.set_focus();
         }
     }
@@ -292,6 +378,11 @@ fn toggle_click_through_from_tray(app: &AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if let Some(webview_dir) = settings::portable_webview_dir() {
+        let _ = std::fs::create_dir_all(&webview_dir);
+        std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", &webview_dir);
+    }
+
     tauri::Builder::default()
         .setup(|app| {
             let mut initial_settings = load_settings(app.handle());
@@ -300,7 +391,9 @@ pub fn run() {
             if !is_signed_in {
                 initial_settings.click_through = false;
             }
-            if initial_settings.run_on_startup {
+            if settings::is_portable_mode() {
+                initial_settings.run_on_startup = false;
+            } else if initial_settings.run_on_startup {
                 let _ = apply_run_on_startup(true);
             }
 
@@ -312,6 +405,7 @@ pub fn run() {
                 dexcom: DexcomClient::new(),
                 modifier_override: AtomicBool::new(false),
                 position_dirty: AtomicBool::new(false),
+                user_hidden: AtomicBool::new(false),
             });
 
             if let Some(overlay) = app.get_webview_window("overlay") {
@@ -321,46 +415,64 @@ pub fn run() {
             }
 
             let handle = app.handle().clone();
-            thread::spawn(move || loop {
-                let state = handle.state::<AppState>();
-                if state.position_dirty.load(Ordering::Relaxed) && !is_vk_down(VK_LBUTTON) {
-                    flush_pending_position(&handle);
-                }
+            thread::spawn(move || {
+                let mut last_topmost_check = Instant::now();
+                loop {
+                    let state = handle.state::<AppState>();
+                    if state.position_dirty.load(Ordering::Relaxed) && !is_vk_down(VK_LBUTTON) {
+                        flush_pending_position(&handle);
+                    }
 
-                let (click_through, modifier) = {
-                    let Ok(guard) = state.settings.lock() else {
+                    let (click_through, modifier, always_on_top) = {
+                        let Ok(guard) = state.settings.lock() else {
+                            thread::sleep(Duration::from_millis(120));
+                            continue;
+                        };
+                        (
+                            guard.click_through,
+                            guard.click_through_modifier.clone(),
+                            guard.always_on_top,
+                        )
+                    };
+
+                    if always_on_top
+                        && !state.user_hidden.load(Ordering::Relaxed)
+                        && last_topmost_check.elapsed() >= Duration::from_millis(1500)
+                    {
+                        last_topmost_check = Instant::now();
+                        if let Some(overlay) = handle.get_webview_window("overlay") {
+                            reassert_overlay_topmost(&handle, &overlay);
+                        }
+                    }
+
+                    if !click_through {
+                        if state.modifier_override.swap(false, Ordering::Relaxed) {
+                            if let Some(overlay) = handle.get_webview_window("overlay") {
+                                let _ = overlay.set_ignore_cursor_events(false);
+                            }
+                            let _ = handle.emit("modifier-override", false);
+                        }
                         thread::sleep(Duration::from_millis(120));
                         continue;
-                    };
-                    (guard.click_through, guard.click_through_modifier.clone())
-                };
+                    }
 
-                if !click_through {
-                    if state.modifier_override.swap(false, Ordering::Relaxed) {
+                    let currently_overriding = state.modifier_override.load(Ordering::Relaxed);
+                    let mod_down = is_vk_down(modifier_vk(&modifier));
+                    let next_override =
+                        mod_down || (currently_overriding && is_vk_down(VK_LBUTTON));
+
+                    if next_override != currently_overriding {
+                        state
+                            .modifier_override
+                            .store(next_override, Ordering::Relaxed);
                         if let Some(overlay) = handle.get_webview_window("overlay") {
-                            let _ = overlay.set_ignore_cursor_events(false);
+                            let _ = overlay.set_ignore_cursor_events(!next_override);
                         }
-                        let _ = handle.emit("modifier-override", false);
+                        let _ = handle.emit("modifier-override", next_override);
                     }
-                    thread::sleep(Duration::from_millis(120));
-                    continue;
+
+                    thread::sleep(Duration::from_millis(40));
                 }
-
-                let currently_overriding = state.modifier_override.load(Ordering::Relaxed);
-                let mod_down = is_vk_down(modifier_vk(&modifier));
-                let next_override = mod_down || (currently_overriding && is_vk_down(VK_LBUTTON));
-
-                if next_override != currently_overriding {
-                    state
-                        .modifier_override
-                        .store(next_override, Ordering::Relaxed);
-                    if let Some(overlay) = handle.get_webview_window("overlay") {
-                        let _ = overlay.set_ignore_cursor_events(!next_override);
-                    }
-                    let _ = handle.emit("modifier-override", next_override);
-                }
-
-                thread::sleep(Duration::from_millis(40));
             });
 
             let toggle_vis =
@@ -393,6 +505,7 @@ pub fn run() {
                     "toggle_click_through" => toggle_click_through_from_tray(app),
                     "reset_position" => {
                         if let Some(state) = app.try_state::<AppState>() {
+                            state.user_hidden.store(false, Ordering::Relaxed);
                             state.position_dirty.store(false, Ordering::Relaxed);
                             let updated = {
                                 let Ok(mut guard) = state.settings.lock() else {
@@ -407,6 +520,7 @@ pub fn run() {
                         if let Some(overlay) = app.get_webview_window("overlay") {
                             place_overlay_initial(&overlay, None, None);
                             let _ = overlay.show();
+                            reassert_overlay_topmost(app, &overlay);
                         }
                     }
                     "open_settings" => {
@@ -473,6 +587,7 @@ pub fn run() {
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![
+            is_portable_mode,
             get_settings,
             save_settings,
             open_settings,

@@ -19,6 +19,7 @@ export function Settings() {
   const [draftPassword, setDraftPassword] = useState(DEFAULT_SETTINGS.password);
   const [statusMsg, setStatusMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [testing, setTesting] = useState(false);
+  const [portableMode, setPortableMode] = useState(false);
   const saveTimerRef = useRef<number | null>(null);
 
   const isSignedIn =
@@ -27,6 +28,10 @@ export function Settings() {
   useEffect(() => {
     document.documentElement.classList.add("settings-mode");
     let unlisten: (() => void) | undefined;
+
+    invoke<boolean>("is_portable_mode")
+      .then((flag) => setPortableMode(flag))
+      .catch(() => {});
 
     invoke<AppSettings>("get_settings")
       .then((loaded) => {
@@ -127,7 +132,10 @@ export function Settings() {
     <div className="settings-page">
       <header className="settings-header">
         <div>
-          <h1>AlGlucoMon</h1>
+          <div className="header-title-row">
+            <h1>AlGlucoMon</h1>
+            {portableMode && <span className="portable-badge">Portable</span>}
+          </div>
           <p>by Almoukhtar Amiouni — live Dexcom G7 desktop overlay</p>
         </div>
       </header>
@@ -415,16 +423,19 @@ export function Settings() {
           />
         </label>
 
-        <label className="row toggle-row">
+        <label className={`row toggle-row${portableMode ? " disabled" : ""}`}>
           <div>
             <span className="row-title">Launch on Windows startup</span>
             <span className="row-sub">
-              Automatically start AlGlucoMon when you sign in to Windows
+              {portableMode
+                ? "Disabled in portable mode to avoid writing Windows Registry entries."
+                : "Automatically start AlGlucoMon when you sign in to Windows"}
             </span>
           </div>
           <input
             type="checkbox"
-            checked={settings.runOnStartup}
+            disabled={portableMode}
+            checked={portableMode ? false : settings.runOnStartup}
             onChange={(e) => updateImmediate("runOnStartup", e.target.checked)}
           />
         </label>

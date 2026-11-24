@@ -27,7 +27,8 @@ AlGlucoMon reads live readings from **Dexcom Share**:
 
 ## Installation (Windows)
 
-Download `AlGlucoMon_0.1.1_x64-setup.exe` from the [Releases](../../releases) page and run the installer.
+- **Installer:** Download `AlGlucoMon_0.1.2_x64-setup.exe` from the [Releases](../../releases) page and run it.
+- **Portable (no install):** Download `AlGlucoMon_0.1.2_x64-portable.zip`, extract anywhere (e.g., a folder or USB drive), and run `AlGlucoMon.exe`. The included `portable.txt` marker keeps `settings.json` and WebView2 data inside the same folder with zero AppData or Windows Registry entries (and disables **Launch on Windows startup**).
 
 ## Building from Source
 
