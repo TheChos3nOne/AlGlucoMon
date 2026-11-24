@@ -42,7 +42,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "publisher": "Almoukhtar Amiouni",
     "copyright": "Copyright (C) 2026 Almoukhtar Amiouni",
     "icon": [

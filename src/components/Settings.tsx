@@ -31,7 +31,7 @@ export function Settings() {
 
     invoke<boolean>("is_portable_mode")
       .then((flag) => setPortableMode(flag))
-      .catch(() => {});
+      .catch(() => { });
 
     invoke<AppSettings>("get_settings")
       .then((loaded) => {
@@ -40,7 +40,7 @@ export function Settings() {
         setDraftUsername(loaded.username);
         setDraftPassword(loaded.password);
       })
-      .catch(() => {});
+      .catch(() => { });
 
     listen<AppSettings>("settings-updated", (event) => {
       setSettings(event.payload);
@@ -124,7 +124,7 @@ export function Settings() {
     setSettings(next);
     setDraftUsername("");
     setDraftPassword("");
-    await invoke("save_settings", { settings: next }).catch(() => {});
+    await invoke("save_settings", { settings: next }).catch(() => { });
     setStatusMsg({ kind: "ok", text: "Signed out." });
   };
 

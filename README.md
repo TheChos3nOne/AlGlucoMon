@@ -30,6 +30,11 @@ AlGlucoMon reads live readings from **Dexcom Share**:
 - **Installer:** Download `AlGlucoMon_0.1.2_x64-setup.exe` from the [Releases](../../releases) page and run it.
 - **Portable (no install):** Download `AlGlucoMon_0.1.2_x64-portable.zip`, extract anywhere (e.g., a folder or USB drive), and run `AlGlucoMon.exe`. The included `portable.txt` marker keeps `settings.json` and WebView2 data inside the same folder with zero AppData or Windows Registry entries (and disables **Launch on Windows startup**).
 
+## Installation (Android 8.0+)
+
+- Download `AlGlucoMon_0.2.0_android.apk` from the [Releases](../../releases) page and sideload it on any **Android 8.0 (Oreo) – Android 15** phone or tablet (including older tablets like the LG G Pad 5 10.1).
+- Includes both a **Fullscreen Brightness-Reactive Sugar Display** (always-on, ambient light auto-dimming, night low-glare mode, burn-in pixel shift, finger dot-scrubbing) and the **Floating System Overlay** (drag with saved portrait/landscape positions, click-through lock, live status-bar glucose number, Quick Settings tile, and start-on-boot).
+
 ## Building from Source
 
 Requires **Node.js (v18+)**, **Rust**, and Windows **WebView2** (pre-installed on Windows 10/11).

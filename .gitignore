@@ -2,6 +2,10 @@ node_modules/
 dist/
 src-tauri/target/
 src-tauri/gen/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
 *.log
 .env*
 .DS_Store
