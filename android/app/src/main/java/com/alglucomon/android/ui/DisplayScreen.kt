@@ -55,7 +55,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.alglucomon.android.data.AppSettings
-import com.alglucomon.android.data.AppTheme
 import com.alglucomon.android.data.BrightnessMode
 import com.alglucomon.android.data.GlucoseUiState
 import com.alglucomon.android.data.GraphStyle
@@ -132,28 +131,22 @@ fun DisplayScreen(
         else getGlucoseStatus(latest.value, settings)
     }
     val accent = statusColor(status)
-    val isLightTheme = settings.theme == AppTheme.LIGHT_GLASS
+    val isLightTheme = false
     val isNightDim = settings.nightAutoDim &&
         settings.brightnessMode == BrightnessMode.AUTO &&
         currentLux != null &&
         currentLux < 6f
 
-    val bgBrush = when (settings.theme) {
-        AppTheme.LIGHT_GLASS -> Brush.verticalGradient(listOf(Color(0xFFF1F5F9), Color(0xFFE2E8F0)))
-        AppTheme.OLED -> Brush.verticalGradient(listOf(Color(0xFF000000), Color(0xFF000000)))
-        AppTheme.ADAPTIVE -> Brush.linearGradient(
-            listOf(Color(0xFF070B12), Color(0xFF0C1422), accent.copy(alpha = 0.22f))
-        )
-        AppTheme.DARK_GLASS -> Brush.verticalGradient(listOf(Color(0xFF080C15), Color(0xFF0F172A)))
-    }
+    // True #000000 black background on Fullscreen Sugar Display for OLED battery savings
+    val bgBrush = Brush.verticalGradient(listOf(Color.Black, Color.Black))
 
     val agePair = latest?.let { formatAge(it.timestamp, nowMs) }
     val deltaText = if (latest != null && previous != null) {
         formatDelta(latest.value - previous.value, settings.unit)
     } else null
 
-    val textPrimary = if (isLightTheme) Color(0xFF0F172A) else Color(0xFFF8FAFC)
-    val textSecondary = if (isLightTheme) Color(0xFF334155) else Color(0xFFCBD5E1)
+    val textPrimary = Color(0xFFF8FAFC)
+    val textSecondary = Color(0xFFCBD5E1)
     val timeFormatter = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
 
     BoxWithConstraints(
@@ -262,7 +255,7 @@ fun DisplayScreen(
                         .background(
                             Brush.radialGradient(
                                 colors = listOf(
-                                    (if (isLightTheme) Color(0xFFF8FAFC) else Color(0xFF070B12)).copy(alpha = 0.55f),
+                                    Color.Black.copy(alpha = 0.65f),
                                     Color.Transparent,
                                 ),
                                 center = Offset(widthPx * 0.48f, heightPx * 0.50f),

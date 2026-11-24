@@ -2,7 +2,9 @@
 
 A sleek, lightweight, always-on-top Windows desktop glucose overlay for **Dexcom G7**, built with **Tauri v2**, **React**, **TypeScript**, and **Rust** by **Almoukhtar Amiouni**.
 
-## Screenshots
+## Screenshots (Windows Desktop)
+
+*The screenshots below show the Windows desktop overlay:*
 
 | Live Overlay | Hovering a Reading Dot | Click-Through Locked (Dimmed) |
 | :---: | :---: | :---: |
@@ -33,7 +35,20 @@ AlGlucoMon reads live readings from **Dexcom Share**:
 ## Installation (Android 8.0+)
 
 - Download `AlGlucoMon_0.2.0_android.apk` from the [Releases](../../releases) page and sideload it on any **Android 8.0 (Oreo) – Android 15** phone or tablet (including older tablets like the LG G Pad 5 10.1).
-- Includes both a **Fullscreen Brightness-Reactive Sugar Display** (always-on, ambient light auto-dimming, night low-glare mode, burn-in pixel shift, finger dot-scrubbing) and the **Floating System Overlay** (drag with saved portrait/landscape positions, click-through lock, live status-bar glucose number, Quick Settings tile, and start-on-boot).
+- Includes both a **Fullscreen Brightness-Reactive Sugar Display** (100% pure `#000000` OLED black background for battery savings, always-on screen, ambient light auto-dimming, night low-glare mode, burn-in pixel shift) and the **Floating System Overlay**.
+
+### Android Controls
+
+**Fullscreen Sugar Display:**
+- **Tap anywhere** on the screen to show or hide the bottom control bar (**Switch to Overlay**, **Brightness: Auto / Manual**, **Refresh**, and **Settings**).
+- **Drag across the graph** (in **Dots** mode) to scrub past readings and inspect any dot's glucose value and exact timestamp.
+- **Auto brightness** reacts to your device's ambient light sensor (bright in daylight, ultra-dim in dark rooms) with a **100% true black OLED background** to reduce battery consumption.
+
+**Floating System Overlay:**
+- **Drag** anywhere on the overlay card to move it (remembers separate **Portrait** and **Landscape** positions).
+- **Tap** the overlay card (in **Dots** mode) to enter **Inspect Mode** — drag your finger across dots to read individual values/timestamps, tap **Open** to launch Fullscreen Display/Settings, or tap **Done** to return to normal drag mode.
+- **Persistent Notification & Status Bar:** Shows your live glucose number directly in the status bar with 1-tap **Lock / Unlock** (toggles click-through + dimmed opacity), **Display**, and **Hide** actions.
+- **Quick Settings Tile:** Pull down Quick Settings and add the **AlGlucoMon Overlay** tile to toggle the floating overlay on/off from any app.
 
 ## Building from Source
 
